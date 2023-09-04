@@ -120,6 +120,7 @@ class TransferService(object):
     def has_broker(key: str):
         return key in TransferService.data_buffer
 
+    # 从队列中通过迭代器形式依次读取数据
     @staticmethod
     def transfer_batch_generator_from_broker(broker: FifoBroker, tag):
         i = 0
@@ -176,6 +177,7 @@ class GrpcTransferServicer(transfer_pb2_grpc.TransferServiceServicer):
             if broker is not None:
                 broker.signal_write_finish()
 
+    # 实际获取数据块
     @_exception_logger
     def recv(self, request, context):
         base_tag = request.header.tag

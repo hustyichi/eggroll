@@ -69,6 +69,7 @@ class BrokerClosed(Exception):
     pass
 
 
+# 基于 Queue 实现的一个内存中存储的先入先出的队列
 class FifoBroker(Broker):
     __broker_seq = 0
 
