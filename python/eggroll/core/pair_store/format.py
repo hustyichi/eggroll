@@ -343,7 +343,7 @@ class PairBinReader(object):
                         raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {value_size}')
                     value = self.__data[self.__offset: self.__offset + value_size]
                     self.__offset = self.__offset + value_size
-                    
+
                 except IndexError as e:
                     # read end
                     self.__offset = old_offset
@@ -372,12 +372,14 @@ class PairBinWriter(object):
         buf.write_int32(0)
         buf.write_int32(0)
 
+    # 初始化数据头，通过数据头定义具体的协议，方便后续获取数据
     def __init__(self, pair_buffer, data=None):
         if data is None:
             self.use_array_byte_buffer = True
             self.__buf = pair_buffer
             self.write_head(self.__buf)
         else:
+            # 初始化原始数据，将特定格式的数据作为数据头写入 data，可以理解为协议定义的标记位
             self.__data = data
             self.__size = len(data)
             self.__offset = 0
@@ -400,6 +402,7 @@ class PairBinWriter(object):
             size = 4
             if self.__size - self.__offset - size < 0:
                 raise IndexError(f'buffer overflow. remaining: {self.size() - self.__offset}, required: {size}')
+            # 在 self__data 写入数字 0， 使用大端保存
             pack_into('>i', self.__data, self.__offset, 0)
             self.__offset = self.__offset + size
 
@@ -407,6 +410,7 @@ class PairBinWriter(object):
             size = 4
             if self.__size - self.__offset - size < 0:
                 raise IndexError(f'buffer overflow. remaining: {self.size() - self.__offset}, required: {size}')
+            # 在 self__data 写入数字 0， 使用大端保存
             pack_into('>i', self.__data, self.__offset, 0)
             self.__offset = self.__offset + size
 
@@ -459,6 +463,7 @@ class PairBinWriter(object):
         self.__data[op_offset: op_offset + size] = value
         self.__offset = op_offset + size
 
+    # 写入 key，value，使用的格式为 `key长度, key实际值, value长度, value 实际值`
     def write(self, key_bytes, value_bytes):
         if self.use_array_byte_buffer:
             PairBinWriter.write_pair(self.__buf, key_bytes=key_bytes, value_bytes=value_bytes)

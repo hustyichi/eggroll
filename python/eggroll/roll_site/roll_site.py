@@ -103,6 +103,8 @@ class RollSiteContext:
         self._options = options
 
         self._registered_comm_types = dict()
+
+        # 注册实际传输的数据处理方法，目前实际的数据都是通过 grpc 传输的
         self.register_comm_type('grpc', RollSiteGrpc)
 
         endpoint = options["proxy_endpoint"]
@@ -219,6 +221,7 @@ class _BatchStreamHelper(object):
         self._last_batch_seq = 0
         self._last_stream_seq = 0
 
+    # 基于分片数据生成 packet 对象数据，方便进行 grpc 发送
     def generate_packet(self, bin_batch_iter, cur_retry):
         if cur_retry == 0:
             self._last_batch_seq = self._rs_header._batch_seq
@@ -227,6 +230,7 @@ class _BatchStreamHelper(object):
             self._rs_header._batch_seq = self._last_batch_seq
             self._rs_header._stream_seq = self._last_stream_seq
 
+        # 构造 grpc 请求包，方便通过 grpc 发送
         def encode_packet(rs_header_inner, batch_inner):
             header = proxy_pb2.Metadata(
                     src=proxy_pb2.Topic(partyId=rs_header_inner._src_party_id, role=rs_header_inner._src_role),
@@ -256,13 +260,17 @@ class _BatchStreamHelper(object):
             self._rs_header._total_batches = self._rs_header._batch_seq
         yield encode_packet(self._rs_header, prev_batch)
 
+    # 将原始的 key, value 转换为自定义的字节流
     def _generate_batch_streams(self, pair_iter, batches_per_stream, body_bytes):
+        # 将原始 key, value 的迭代器转换为一个自定义格式的自定义字节流格式, batches 中数据不超过 body_bytes 的大小
         batches = TransferPair.pair_to_bin_batch(pair_iter, sendbuf_size=body_bytes)
+
         try:
             peek = next(batches)
         except StopIteration as e:
             self._finish_partition = True
 
+        # 将原有的数据块进行了分组，每组包含 batches_per_stream 块
         def chunk_batch_stream():
             nonlocal self
             nonlocal peek
@@ -279,6 +287,7 @@ class _BatchStreamHelper(object):
                 yield cur_batch
 
         try:
+            # 按照每组 batches_per_stream 进行返回，将最终的组数保存至 _stream_seq 中
             while not self._finish_partition:
                 self._rs_header._stream_seq += 1
                 yield chunk_batch_stream()
@@ -298,6 +307,7 @@ class RollSite(RollSiteBase):
         self._impl_class = self.ctx.get_comm_impl(self._comm_type)
         self._impl_instance = self._impl_class(name, tag, rs_ctx, options)
 
+    # 数据推送至各个参与方
     def push(self, obj, parties: list = None, options: dict = None):
         if options is None:
             options = {}
@@ -308,15 +318,21 @@ class RollSite(RollSiteBase):
             dst_role = role_party_id[0]
             dst_party_id = str(role_party_id[1])
             data_type = 'rollpair' if isinstance(obj, RollPair) else 'object'
+
+            # 本次推送相关的信息保存至 ErRollSiteHeader 中，包括源 party 的 id，目的 party 的 id
+            # 使用 name 和 tag 标记唯一的一批数据, 后续需要会使用同样的 name 和 tag 获取数据
             rs_header = ErRollSiteHeader(
                     roll_site_session_id=self.roll_site_session_id, name=self.name, tag=self.tag,
                     src_role=self.local_role, src_party_id=self.party_id, dst_role=dst_role, dst_party_id=dst_party_id,
                     data_type=data_type)
 
+            # 使用线程池中线程发起实际的数据推送，避免进行阻塞主线程，同时提升并发效率
+            # 实际的传输处理是在 RollSiteContext 初始化时注册上的，目前仅注册了 grpc，因此实际是通过 RollSiteGrpc 发起数据传输
             if isinstance(obj, RollPair):
                 future = self._run_thread(self._impl_instance._push_rollpair, obj, rs_header, options)
             else:
                 future = self._run_thread(self._impl_instance._push_bytes, obj, rs_header, options)
+
             futures.append(future)
         return futures
 
@@ -362,18 +378,25 @@ class RollSiteGrpc(RollSiteImplBase):
             options = {}
         start_time = time.time()
 
+        # rs_header 主要包含传输所需的元信息，比如源 party 与目标 party，以及本次传输的 name 和 tag
+        # 基于这些信息拼接生成 key，方便在日志中追踪单次传输的过程
         rs_key = rs_header.get_rs_key()
         int_size = 4
 
         if L.isEnabledFor(logging.DEBUG):
             L.debug(f"pushing object: rs_key={rs_key}, rs_header={rs_header}")
 
+        # 对数据进行分片，返回分片序号以及对应的分片数据
+        # py_obj 为原始数据，body_bytes 为分片数据
         def _generate_obj_bytes(py_obj, body_bytes):
             key_id = 0
+
+            # 基于 pickle 进行序列化，保证支持不同类型的数据
             obj_bytes = pickle.dumps(py_obj)
             obj_bytes_len = len(obj_bytes)
             cur_pos = 0
 
+            # 分片返回数据，每片返回包含 `分片序号, 分片数据`，后续可以基于分片序号进行组装
             while cur_pos <= obj_bytes_len:
                 yield key_id.to_bytes(int_size, "big"), obj_bytes[cur_pos:cur_pos + body_bytes]
                 key_id += 1
@@ -415,6 +438,7 @@ class RollSiteGrpc(RollSiteImplBase):
             while cur_retry < max_retry_cnt:
                 L.trace(f'pushing object stream. rs_key={rs_key}, rs_header={rs_header}, cur_retry={cur_retry}')
                 try:
+                    # 基于字节流构造 Packet 包，通过 grpc 将数据包发送出去
                     stub.push(bs_helper.generate_packet(batch_stream_data, cur_retry), timeout=per_stream_timeout)
                     exception = None
                     break

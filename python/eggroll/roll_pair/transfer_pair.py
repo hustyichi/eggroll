@@ -156,6 +156,8 @@ class TransferPair(object):
         futures.append(self._executor_pool.submit(do_send_all))
         return CompositeFuture(futures)
 
+    # 将原始的 key, value 迭代器中的数据转换为二进制字节流，使用自定义的格式化方式
+    # sendbuf_size 指定缓冲区大小，单次迭代返回的数据不超过 sendbuf_size 的大小
     @staticmethod
     @_exception_logger
     def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
@@ -169,6 +171,7 @@ class TransferPair(object):
         buffer = None
         writer = None
 
+        # 返回缓冲区内的数据，并清空缓冲区
         def commit(bs=sendbuf_size):
             nonlocal ba
             nonlocal buffer
@@ -178,13 +181,18 @@ class TransferPair(object):
                 bin_batch = bytes(ba[0:writer.get_offset()])
             # if ba:
             #     bin_batch = bytes(ba[0:buffer.get_offset()])
+
+            # 指定缓冲区大小，通过缓存中限制了单次传输的数据量大小
             ba = bytearray(bs)
             buffer = ArrayByteBuffer(ba)
             writer = PairBinWriter(pair_buffer=buffer, data=ba)
             return bin_batch
-        # init var
+
+        # 初始化 PairBinWriter，方便后续持续调用 write() 写入方法
         commit()
         try:
+            # 通过持续调用，将原始数据转化为特定格式化的字节流
+            # 对应格式为 `文件头数据,<key 长度，key，value 长度，value>`，其中 <> 中的内容是不断重复
             for k, v in input_iter:
                 try:
                     writer.write(k, v)
@@ -193,9 +201,14 @@ class TransferPair(object):
                         break
                 except IndexError as e:
                     # TODO:0: replace 1024 with constant
+
+                    # 报错时反映当前数据的插入超过缓冲区的大小，通过 commit 将数据返回，并额外新建缓冲区
                     yield commit(max(sendbuf_size, len(k) + len(v) + 1024))
                     writer.write(k, v)
+
             L.trace(f'pair_to_bin_batch final pair count={pair_count}')
+
+            # 将缓冲区内的数据返回
             yield commit()
         except Exception as e:
             L.exception(f"bin_batch_generator error:{e}")
