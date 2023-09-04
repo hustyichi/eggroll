@@ -336,15 +336,19 @@ class RollSite(RollSiteBase):
             futures.append(future)
         return futures
 
+    # 获取各个参与方发送的数据
     def pull(self, parties: list = None, options: dict = None):
         if options is None:
             options = {}
         futures = []
         for src_role, src_party_id in parties:
+            # 获取相关的信息保存至 ErRollSiteHeader 中
             src_party_id = str(src_party_id)
             rs_header = ErRollSiteHeader(
                     roll_site_session_id=self.roll_site_session_id, name=self.name, tag=self.tag,
                     src_role=src_role, src_party_id=src_party_id, dst_role=self.local_role, dst_party_id=self.party_id)
+
+            # 使用线程池中线程发起实际的数据拉取，避免阻塞主线程
             futures.append(self._receive_executor_pool.submit(self._impl_instance._pull_one, rs_header, options))
         return futures
 
@@ -645,10 +649,15 @@ class RollSiteGrpc(RollSiteImplBase):
                                       f"rs_header={rs_header}, pull_status={pull_status}, last_cur_pairs={last_cur_pairs}, cur_pairs={cur_pairs}")
                 else:
                     L.debug(f"getting status DO finished for rs_key={rs_key}, rs_header={rs_header}, pull_status={pull_status}, cur_pairs={cur_pairs}, total_batches={total_batches}")
+
+                    # 获取数据对应的 RollPair 对象
                     rp = self.ctx.rp_ctx.load(name=rp_name, namespace=rp_namespace)
 
                     clear_future = self._receive_executor_pool.submit(rp.with_stores, clear_status, options={"__op": "clear_status"})
                     if data_type == "object":
+
+                        # 从 RollPair 中获取完整的对象
+                        # 基于包序号进行排序，并将排序后的数据组装起来，执行反序列化得到原始数据
                         result = _serdes.deserialize(b''.join(map(lambda t: t[1], sorted(rp.get_all(), key=lambda x: int.from_bytes(x[0], "big")))))
                         rp.destroy()
                         L.debug(f"pulled object: rs_key={rs_key}, rs_header={rs_header}, is_none={result is None}, "

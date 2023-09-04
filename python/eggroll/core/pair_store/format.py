@@ -191,6 +191,7 @@ class PairBinReader(object):
             self.__size = len(data)
             self.__offset = 0
 
+            # 获取首部的 magic_num, 用于校验包是否能正确解析
             # _magic_num = self.read_bytes(len(MAGIC_NUM))
             if self.__size - self.__offset - len(MAGIC_NUM) < 0:
                 raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {len(MAGIC_NUM)}')
@@ -200,6 +201,7 @@ class PairBinReader(object):
             if _magic_num != MAGIC_NUM:
                 raise ValueError('magic num does not match')
 
+            # 获取协议版本，方便后续做不同版本的支持
             # _protocol_version = self.read_bytes(len(PROTOCOL_VERSION))
             if self.__size - self.__offset - len(PROTOCOL_VERSION) < 0:
                 raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {len(PROTOCOL_VERSION)}')
@@ -208,6 +210,7 @@ class PairBinReader(object):
             if _protocol_version != PROTOCOL_VERSION:
                 raise ValueError('protocol version not suppoted')
 
+            # 获取 header_size 和 body_size，目前来看存储的都是 0， 可能没有用起来
             # move offset, do not delete
             # header_size = self.read_int32()
             value_size = 4
@@ -288,6 +291,7 @@ class PairBinReader(object):
         # self.__adjust_offset(op_offset, size)
         self.__offset = op_offset + size
 
+    # 读取当前块所有的数据，通过迭代器返回 key, value 对
     def read_all(self):
         if self.use_array_byte_buffer:
             while self.__buf.remaining_size() > 0:
@@ -313,6 +317,7 @@ class PairBinReader(object):
                 old_offset = self.__offset
                 try:
                     # key_size = self.read_int32()
+                    # 获取 key 长度
                     int_size = 4
                     if self.__size - self.__offset - int_size < 0:
                         raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {int_size}')
@@ -325,12 +330,14 @@ class PairBinReader(object):
                         self.__offset = old_offset
                         return
 
+                    # 获取 key 对应的内容，其存储的是包对应的顺序
                     # key = self.read_bytes(size=key_size)
                     if self.__size - self.__offset - key_size < 0:
                         raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {key_size}')
                     key = self.__data[self.__offset: self.__offset + key_size]
                     self.__offset = self.__offset + key_size
 
+                    # 获取 value 的长度
                     #value_size = self.read_int32()
                     int_size = 4
                     if self.__size - self.__offset - int_size < 0:
@@ -338,6 +345,7 @@ class PairBinReader(object):
                     value_size = unpack_from('>i', self.__data, self.__offset)[0]
                     self.__offset = self.__offset + int_size
 
+                    # 获取 vlaue 对应的内容
                     # value = self.read_bytes(size=value_size)
                     if self.__size - self.__offset - value_size < 0:
                         raise IndexError(f'buffer overflow. remaining: {self.__size - self.__offset}, required: {value_size}')
@@ -348,6 +356,8 @@ class PairBinReader(object):
                     # read end
                     self.__offset = old_offset
                     return
+
+                # 实际返回 key, value 对
                 yield key, value
 
 

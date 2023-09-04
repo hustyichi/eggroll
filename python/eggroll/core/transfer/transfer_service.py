@@ -243,6 +243,7 @@ class TransferClient(object):
             L.exception(f'Error calling to {endpoint} in TransferClient.send')
             raise e
 
+    # 通过 grpc 获取 tag 对应的数据
     @_exception_logger
     def recv(self, endpoint: ErEndpoint, tag, broker):
         exception = None

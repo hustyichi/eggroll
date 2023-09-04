@@ -214,13 +214,16 @@ class TransferPair(object):
             L.exception(f"bin_batch_generator error:{e}")
         L.trace(f'generate_bin_batch end. pair count={pair_count}')
 
+    # 迭代返回 input_iter 中包含的数据块，使用 key, value 的形式进行返回
     @staticmethod
     def bin_batch_to_pair(input_iter):
         L.trace(f"bin_batch_to_pair start")
         write_count = 0
+
         for batch in input_iter:
             L.trace(f"bin_batch_to_pair: cur batch size={len(batch)}")
             try:
+                # 解析 batch 对应的数据，获取 batch 中包含的 key, value 对，通过迭代器返回
                 bin_data = ArrayByteBuffer(batch)
                 reader = PairBinReader(pair_buffer=bin_data, data=batch)
                 for k_bytes, v_bytes in reader.read_all():
@@ -275,6 +278,7 @@ class TransferPair(object):
             return done_cnt
         return self._executor_pool.submit(do_store, store_partition, is_shuffle, total_writers, reduce_op)
 
+    # 获取 store 中分区 partition，依次请求对应的数据块，并进行解析，使用 key，value 迭代器的形式进行返回
     def gather(self, store):
         L.trace(f'gather start for transfer_id={self.__transfer_id}, store={store}')
         client = TransferClient()
@@ -282,5 +286,9 @@ class TransferPair(object):
             tag = self.__generate_tag(partition._id)
             L.trace(f'gather for tag={tag}, partition={partition}')
             target_endpoint = partition._processor._transfer_endpoint
+
+            # 获取 tag 对应的数据块
             batches = (b.data for b in client.recv(endpoint=target_endpoint, tag=tag, broker=None))
+
+            # 解析数据块，得到 key, value 对，其中 key 表示包对应的序号，value 表示实际的内容
             yield from TransferPair.bin_batch_to_pair(batches)

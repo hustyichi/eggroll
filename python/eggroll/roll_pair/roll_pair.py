@@ -124,9 +124,11 @@ class RollPairContext(object):
     def route_to_egg(self, partition: ErPartition):
         return self.__session.route_to_egg(partition)
 
+    # 对 store 中 partitions 进行更新，看起来是根据实时的排名确定处理的节点?
     def populate_processor(self, store: ErStore):
         return self.__session.populate_processor(store)
 
+    # 根据 name 和 namespace 获取对应的 store，其中包含数据对应的所有分区 partition
     def load_store(self, name=None, namespace=None, options: dict = None):
         if options is None:
             options = {}
@@ -146,6 +148,7 @@ class RollPairContext(object):
         final_options = store_options.copy()
 
         # TODO:0: add 'error_if_exist, persistent / default store type'
+        # 初始化一个原始 store，后续更新对应的 partition
         store = ErStore(
             store_locator=ErStoreLocator(
                 store_type=store_type,
@@ -156,6 +159,8 @@ class RollPairContext(object):
                 serdes=store_serdes),
             options=final_options)
 
+        # 基于原始的 store 信息获取完整的 store 信息，其中会包含 partition 内容
+        # 实际是通过调用 grpc 获取的内容
         if create_if_missing:
             result = self.__session._cluster_manager_client.get_or_create_store(store)
         else:
@@ -168,7 +173,10 @@ class RollPairContext(object):
         return self.populate_processor(result)
 
     def load(self, name=None, namespace=None, options: dict = None):
+        # 根据 name 和 namespace 获取对应的数据 store，其中包含所有的数据分区 partition
         store = self.load_store(name=name, namespace=namespace, options=options)
+
+        # 基于 store 初始化生成对应的 RollPair，并基于 RollPair 进行后续数据的获取
         return RollPair(store, self)
 
     # TODO:1: separates load parameters and put all parameters
@@ -553,6 +561,7 @@ class RollPair(object):
         value = job_resp._value
         return value
 
+    # 获取对应的全部数据，事实上上就是获取 self.__store 中包含全部分区数据 partitions, 并对各个 partitions 中的块进行读取
     @_method_profile_logger
     def get_all(self, limit=None, options: dict = None):
         if options is None:
@@ -580,9 +589,12 @@ class RollPair(object):
 
         send_command()
 
+        # 更新 store 对应的 partition 信息，看起来是实时更新对应的处理节点
         populated_store = self.ctx.populate_processor(self.__store)
         transfer_pair = TransferPair(transfer_id=job_id)
         done_cnt = 0
+
+        # 获取匹配的包数据，并进行包解析，通过 key, value 的形式进行返回, 其中 key 表示包序号，value 表示具体的内容
         for k, v in transfer_pair.gather(populated_store):
             done_cnt += 1
             yield self.key_serdes.deserialize(k), self.value_serdes.deserialize(v)

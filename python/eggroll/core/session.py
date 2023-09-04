@@ -251,6 +251,7 @@ class ErSession(object):
 
         return result
 
+    # 对 store 中 partitions 进行更新，看起来是根据实时的排名确定处理的节点?
     def populate_processor(self, store: ErStore):
         populated_partitions = list()
         for p in store._partitions:
