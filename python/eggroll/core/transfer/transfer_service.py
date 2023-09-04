@@ -184,6 +184,7 @@ class GrpcTransferServicer(transfer_pb2_grpc.TransferServiceServicer):
         L.debug(f'GrpcTransferServicer recv broker tag={base_tag}')
         callee_messages_broker = TransferService.get_broker(base_tag)
         import types
+        #  Broker 属于迭代器形式就直接遍历获取对应的包数据
         if isinstance(callee_messages_broker, types.GeneratorType):
             i = 0
             for data in callee_messages_broker:
@@ -192,6 +193,7 @@ class GrpcTransferServicer(transfer_pb2_grpc.TransferServiceServicer):
                 i += 1
                 yield batch
         else:
+            # 非迭代器形式则通过 get() 依次遍历获取包数据
             return TransferService.transfer_batch_generator_from_broker(callee_messages_broker, base_tag)
 
 
