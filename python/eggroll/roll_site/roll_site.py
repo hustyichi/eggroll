@@ -290,6 +290,7 @@ class _BatchStreamHelper(object):
             # 按照每组 batches_per_stream 进行返回，将最终的组数保存至 _stream_seq 中
             while not self._finish_partition:
                 self._rs_header._stream_seq += 1
+                # 这边使用 yield 返回，因此迭代访问 _generate_batch_streams 获取的每个元素是一个生成器，需要通过 list(xxx) 获取每个元素的列表
                 yield chunk_batch_stream()
         except Exception as e:
             L.exception(f'error in generating stream, rs_key={self._rs_header.get_rs_key()}, rs_header={self._rs_header}')
@@ -442,7 +443,7 @@ class RollSiteGrpc(RollSiteImplBase):
             while cur_retry < max_retry_cnt:
                 L.trace(f'pushing object stream. rs_key={rs_key}, rs_header={rs_header}, cur_retry={cur_retry}')
                 try:
-                    # 基于字节流构造 Packet 包，通过 grpc 将数据包发送出去
+                    # 基于字节流构造的 Packet 包迭代器，通过 grpc 将数据包发送出去
                     stub.push(bs_helper.generate_packet(batch_stream_data, cur_retry), timeout=per_stream_timeout)
                     exception = None
                     break
