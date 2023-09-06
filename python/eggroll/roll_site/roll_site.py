@@ -262,7 +262,7 @@ class _BatchStreamHelper(object):
 
     # 将原始的 key, value 转换为自定义的字节流
     def _generate_batch_streams(self, pair_iter, batches_per_stream, body_bytes):
-        # 将原始 key, value 的迭代器转换为一个自定义格式的自定义字节流格式, batches 中数据不超过 body_bytes 的大小
+        # 将原始 key, value 的迭代器转换为一个自定义格式的自定义字节流格式 batch, 单个 batch 中数据不超过 body_bytes 的大小
         batches = TransferPair.pair_to_bin_batch(pair_iter, sendbuf_size=body_bytes)
 
         try:
@@ -270,7 +270,7 @@ class _BatchStreamHelper(object):
         except StopIteration as e:
             self._finish_partition = True
 
-        # 将原有的数据块进行了分组，每组包含 batches_per_stream 块
+        # 将原有的数据块进行了分组，每组包含 batches_per_stream 个 batch
         def chunk_batch_stream():
             nonlocal self
             nonlocal peek
@@ -392,7 +392,7 @@ class RollSiteGrpc(RollSiteImplBase):
             L.debug(f"pushing object: rs_key={rs_key}, rs_header={rs_header}")
 
         # 对数据进行分片，返回分片序号以及对应的分片数据
-        # py_obj 为原始数据，body_bytes 为分片数据
+        # py_obj 为原始数据，body_bytes 为分片数据大小
         def _generate_obj_bytes(py_obj, body_bytes):
             key_id = 0
 
